@@ -17,6 +17,7 @@ import (
 	"github.com/sourcegraph/sourcegraph/internal/extsvc"
 	"github.com/sourcegraph/sourcegraph/internal/extsvc/bitbucketserver"
 	"github.com/sourcegraph/sourcegraph/internal/extsvc/github"
+	"github.com/sourcegraph/sourcegraph/internal/extsvc/gitlab"
 	"github.com/sourcegraph/sourcegraph/internal/vcs/git"
 )
 
@@ -27,6 +28,7 @@ import (
 var SupportedExternalServices = map[string]struct{}{
 	extsvc.TypeGitHub:          {},
 	extsvc.TypeBitbucketServer: {},
+	extsvc.TypeGitLab:          {},
 }
 
 // IsRepoSupported returns whether the given ExternalRepoSpec is supported by
@@ -418,6 +420,12 @@ func (c *Changeset) SetMetadata(meta interface{}) error {
 		c.ExternalServiceType = extsvc.TypeBitbucketServer
 		c.ExternalBranch = git.AbbreviateRef(pr.FromRef.ID)
 		c.ExternalUpdatedAt = unixMilliToTime(int64(pr.UpdatedDate))
+	case *gitlab.MergeRequest:
+		c.Metadata = pr
+		c.ExternalID = strconv.FormatInt(pr.IID, 10)
+		c.ExternalServiceType = extsvc.TypeGitLab
+		c.ExternalBranch = pr.SourceBranch
+		c.ExternalUpdatedAt = pr.UpdatedAt
 	default:
 		return errors.New("unknown changeset type")
 	}
@@ -441,6 +449,8 @@ func (c *Changeset) Title() (string, error) {
 		return m.Title, nil
 	case *bitbucketserver.PullRequest:
 		return m.Title, nil
+	case *gitlab.MergeRequest:
+		return m.Title, nil
 	default:
 		return "", errors.New("unknown changeset type")
 	}
@@ -455,6 +465,8 @@ func (c *Changeset) ExternalCreatedAt() time.Time {
 		return m.CreatedAt
 	case *bitbucketserver.PullRequest:
 		return unixMilliToTime(int64(m.CreatedDate))
+	case *gitlab.MergeRequest:
+		return m.CreatedAt
 	default:
 		return time.Time{}
 	}
@@ -466,6 +478,8 @@ func (c *Changeset) Body() (string, error) {
 	case *github.PullRequest:
 		return m.Body, nil
 	case *bitbucketserver.PullRequest:
+		return m.Description, nil
+	case *gitlab.MergeRequest:
 		return m.Description, nil
 	default:
 		return "", errors.New("unknown changeset type")
@@ -500,6 +514,19 @@ func (c *Changeset) state() (s ChangesetState, err error) {
 		} else {
 			s = ChangesetState(m.State)
 		}
+	case *gitlab.MergeRequest:
+		switch m.State {
+		case gitlab.MergeRequestStateOpened:
+			s = ChangesetStateOpen
+		case gitlab.MergeRequestStateClosed:
+			s = ChangesetStateClosed
+		case gitlab.MergeRequestStateLocked:
+			s = ChangesetStateClosed
+		case gitlab.MergeRequestStateMerged:
+			s = ChangesetStateMerged
+		default:
+			return "", errors.Errorf("unknown merge request state: %s", m.State)
+		}
 	default:
 		return "", errors.New("unknown changeset type")
 	}
@@ -522,6 +549,8 @@ func (c *Changeset) URL() (s string, err error) {
 		}
 		selfLink := m.Links.Self[0]
 		return selfLink.Href, nil
+	case *gitlab.MergeRequest:
+		return m.WebURL, nil
 	default:
 		return "", errors.New("unknown changeset type")
 	}
@@ -620,6 +649,8 @@ func (c *Changeset) Events() (events []*ChangesetEvent) {
 			addEvent(s)
 		}
 
+	case *gitlab.MergeRequest:
+		// TODO: implement event support.
 	}
 	return events
 }
@@ -633,6 +664,8 @@ func (c *Changeset) HeadRefOid() (string, error) {
 		return m.HeadRefOid, nil
 	case *bitbucketserver.PullRequest:
 		return "", nil
+	case *gitlab.MergeRequest:
+		return m.DiffRefs.HeadSHA, nil
 	default:
 		return "", errors.New("unknown changeset type")
 	}
@@ -646,6 +679,8 @@ func (c *Changeset) HeadRef() (string, error) {
 		return "refs/heads/" + m.HeadRefName, nil
 	case *bitbucketserver.PullRequest:
 		return m.FromRef.ID, nil
+	case *gitlab.MergeRequest:
+		return "refs/heads/" + m.SourceBranch, nil
 	default:
 		return "", errors.New("unknown changeset type")
 	}
@@ -660,6 +695,8 @@ func (c *Changeset) BaseRefOid() (string, error) {
 		return m.BaseRefOid, nil
 	case *bitbucketserver.PullRequest:
 		return "", nil
+	case *gitlab.MergeRequest:
+		return m.DiffRefs.BaseSHA, nil
 	default:
 		return "", errors.New("unknown changeset type")
 	}
@@ -673,6 +710,8 @@ func (c *Changeset) BaseRef() (string, error) {
 		return "refs/heads/" + m.BaseRefName, nil
 	case *bitbucketserver.PullRequest:
 		return m.ToRef.ID, nil
+	case *gitlab.MergeRequest:
+		return "refs/heads/" + m.TargetBranch, nil
 	default:
 		return "", errors.New("unknown changeset type")
 	}
@@ -688,6 +727,13 @@ func (c *Changeset) Labels() []ChangesetLabel {
 				Color:       l.Color,
 				Description: l.Description,
 			}
+		}
+		return labels
+	case *gitlab.MergeRequest:
+		// TODO: retrieve other dimensions of labels
+		labels := make([]ChangesetLabel, len(m.Labels))
+		for i, l := range m.Labels {
+			labels[i] = ChangesetLabel{Name: l}
 		}
 		return labels
 	default:
