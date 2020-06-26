@@ -82,7 +82,7 @@ func (s *SyncRegistry) Add(extServiceID int64) {
 	service := services[0]
 
 	switch service.Kind {
-	case extsvc.KindGitHub, extsvc.KindBitbucketServer:
+	case extsvc.KindGitHub, extsvc.KindBitbucketServer, extsvc.KindGitLab:
 	// Supported by campaigns
 	default:
 		log15.Debug("Campaigns syncer not started for unsupported code host", "kind", service.Kind)
@@ -364,6 +364,7 @@ func (s *ChangesetSyncer) Run(ctx context.Context) {
 			syncerMetrics.behindSchedule.WithLabelValues(svcID).Set(float64(behindSchedule))
 		case <-timerChan:
 			start := time.Now()
+			log15.Info("syncing changeset", "ID", next.changesetID)
 			err := s.syncFunc(ctx, next.changesetID)
 			labelValues := []string{svcID, strconv.FormatBool(err == nil)}
 			syncerMetrics.syncDuration.WithLabelValues(labelValues...).Observe(time.Since(start).Seconds())
