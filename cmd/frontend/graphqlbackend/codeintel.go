@@ -153,6 +153,7 @@ type GitBlobLSIFDataResolver interface {
 	ToGitTreeLSIFData() (GitTreeLSIFDataResolver, bool)
 	ToGitBlobLSIFData() (GitBlobLSIFDataResolver, bool)
 
+	NavView(ctx context.Context, args LSIFNavViewArgs) (NavViewConnectionResolver, error)
 	Definitions(ctx context.Context, args *LSIFQueryPositionArgs) (LocationConnectionResolver, error)
 	References(ctx context.Context, args *LSIFPagedQueryPositionArgs) (LocationConnectionResolver, error)
 	Hover(ctx context.Context, args *LSIFQueryPositionArgs) (HoverResolver, error)
@@ -164,6 +165,11 @@ type GitBlobLSIFDataArgs struct {
 	Path      string
 	ExactPath bool
 	ToolName  string
+}
+
+type LSIFNavViewArgs struct {
+	// TODO
+	Empty *string
 }
 
 type LSIFQueryPositionArgs struct {
@@ -179,6 +185,17 @@ type LSIFPagedQueryPositionArgs struct {
 
 type LSIFDiagnosticsArgs struct {
 	graphqlutil.ConnectionArgs
+}
+
+type NavViewConnectionResolver interface {
+	Nodes(ctx context.Context) ([]NavRangeResolver, error)
+}
+
+type NavRangeResolver interface {
+	Range(ctx context.Context) (RangeResolver, error)
+	Definitions(ctx context.Context) (LocationConnectionResolver, error)
+	References(ctx context.Context) (LocationConnectionResolver, error)
+	Hover(ctx context.Context) (HoverResolver, error)
 }
 
 type LocationConnectionResolver interface {

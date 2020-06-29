@@ -2959,6 +2959,9 @@ interface TreeEntryLSIFData {
 # A wrapper object around LSIF query methods for a particular path-at-revision. When this node is
 # null, no LSIF data is available for containing git blob.
 type GitBlobLSIFData implements TreeEntryLSIFData {
+    # TODO - document
+    navview(empty: String): NavViewConnection
+
     # (experimental) The LSIF API may change substantially in the near future as we
     # continue to adjust it for our use cases. Changes will not be documented in the
     # CHANGELOG during this time.
@@ -4109,6 +4112,19 @@ type RegistryExtensionConnection {
     # In order to be able to return local extensions even when the remote registry is unreachable, errors are
     # recorded here instead of in the top-level GraphQL errors list.
     error: String
+}
+
+# TODO - document
+type NavViewConnection {
+    nodes: [NavRange!]!
+}
+
+# TODO - document
+type NavRange {
+    range: Range!
+    definitions: LocationConnection
+    references: LocationConnection
+    hover: Hover
 }
 
 # A list of locations within a file.

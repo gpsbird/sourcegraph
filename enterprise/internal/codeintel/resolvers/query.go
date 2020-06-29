@@ -28,11 +28,22 @@ type AdjustedDiagnostic struct {
 	AdjustedRange  bundles.Range
 }
 
+// TODO - document
+// TODO - rename
+type RangeView struct {
+	Range       bundles.Range
+	Definitions []AdjustedLocation
+	References  []AdjustedLocation
+	HoverText   string
+	HoverRange  bundles.Range
+}
+
 // QueryResolver is the main interface to bundle-related operations exposed to the GraphQL API. This
 // resolver consolidates the logic for bundle operations and is not itself concerned with GraphQL/API
 // specifics (auth, validation, marshaling, etc.). This resolver is wrapped by a symmetrics resolver
 // in this package's graphql subpackage, which is exposed directly by the API.
 type QueryResolver interface {
+	NavView(ctx context.Context) ([]RangeView, error)
 	Definitions(ctx context.Context, line, character int) ([]AdjustedLocation, error)
 	References(ctx context.Context, line, character, limit int, rawCursor string) ([]AdjustedLocation, string, error)
 	Hover(ctx context.Context, line, character int) (string, bundles.Range, bool, error)
@@ -73,6 +84,49 @@ func NewQueryResolver(
 		path:                path,
 		uploads:             uploads,
 	}
+}
+
+// TODO - document
+func (r *queryResolver) NavView(ctx context.Context) ([]RangeView, error) {
+	var rangeViews []RangeView
+	for i := range r.uploads {
+		adjustedPath := r.path // TODO
+
+		// TODO - return additional context
+		ranges, err := r.codeIntelAPI.Ranges(ctx, adjustedPath, r.uploads[i].ID)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, rn := range ranges {
+			definitions, err := r.codeIntelAPI.Definitions(ctx, adjustedPath, rn.Start.Line, rn.Start.Character, r.uploads[i].ID)
+			if err != nil {
+				return nil, err
+			}
+
+			// TODO - references
+
+			text, rx, _, err := r.codeIntelAPI.Hover(ctx, adjustedPath, rn.Start.Line, rn.Start.Character, r.uploads[i].ID)
+			if err != nil {
+				return nil, err
+			}
+
+			adjustedDefinitions, err := r.adjustLocations(ctx, definitions)
+			if err != nil {
+				return nil, err
+			}
+
+			rangeViews = append(rangeViews, RangeView{
+				Range:       rn, // TODO - adjust
+				Definitions: adjustedDefinitions,
+				References:  nil,
+				HoverText:   text,
+				HoverRange:  rx,
+			})
+		}
+	}
+
+	return rangeViews, nil
 }
 
 // Definitions returns the list of source locations that define the symbol at the given position.

@@ -2,6 +2,7 @@ package graphql
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/pkg/errors"
 	gql "github.com/sourcegraph/sourcegraph/cmd/frontend/graphqlbackend"
@@ -38,6 +39,64 @@ func NewQueryResolver(resolver resolvers.QueryResolver, locationResolver *Cached
 
 func (r *QueryResolver) ToGitTreeLSIFData() (gql.GitTreeLSIFDataResolver, bool) { return r, true }
 func (r *QueryResolver) ToGitBlobLSIFData() (gql.GitBlobLSIFDataResolver, bool) { return r, true }
+
+//
+// START EXPERIMENT
+//
+
+func (r *QueryResolver) NavView(ctx context.Context, args gql.LSIFNavViewArgs) (gql.NavViewConnectionResolver, error) {
+	rangeViews, err := r.resolver.NavView(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return &navViewConnectionResolver{
+		rangeViews:       rangeViews,
+		locationResolver: r.locationResolver,
+	}, nil
+}
+
+type navViewConnectionResolver struct {
+	rangeViews       []resolvers.RangeView
+	locationResolver *CachedLocationResolver
+}
+
+func (r *navViewConnectionResolver) Nodes(ctx context.Context) ([]gql.NavRangeResolver, error) {
+	var resolvers []gql.NavRangeResolver
+	for _, rv := range r.rangeViews {
+		resolvers = append(resolvers, &navRangeResolver{
+			rangeView:        rv,
+			locationResolver: r.locationResolver,
+		})
+	}
+
+	return resolvers, nil
+}
+
+type navRangeResolver struct {
+	rangeView        resolvers.RangeView
+	locationResolver *CachedLocationResolver
+}
+
+func (r *navRangeResolver) Range(ctx context.Context) (gql.RangeResolver, error) {
+	return gql.NewRangeResolver(convertRange(r.rangeView.Range)), nil
+}
+
+func (r *navRangeResolver) Definitions(ctx context.Context) (gql.LocationConnectionResolver, error) {
+	return NewLocationConnectionResolver(r.rangeView.Definitions, nil, r.locationResolver), nil
+}
+
+func (r *navRangeResolver) References(ctx context.Context) (gql.LocationConnectionResolver, error) {
+	return nil, fmt.Errorf("unimplemented")
+}
+
+func (r *navRangeResolver) Hover(ctx context.Context) (gql.HoverResolver, error) {
+	return NewHoverResolver(r.rangeView.HoverText, convertRange(r.rangeView.HoverRange)), nil
+}
+
+//
+// END EXPERIMENT
+//
 
 func (r *QueryResolver) Definitions(ctx context.Context, args *gql.LSIFQueryPositionArgs) (gql.LocationConnectionResolver, error) {
 	locations, err := r.resolver.Definitions(ctx, int(args.Line), int(args.Character))

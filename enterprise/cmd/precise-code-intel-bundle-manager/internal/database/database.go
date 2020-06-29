@@ -21,6 +21,9 @@ type Database interface {
 	// Exists determines if the path exists in the database.
 	Exists(ctx context.Context, path string) (bool, error)
 
+	// TODO - document
+	Ranges(ctx context.Context, path string) ([]client.Range, error)
+
 	// Definitions returns the set of locations defining the symbol at the given position.
 	Definitions(ctx context.Context, path string, line, character int) ([]client.Location, error)
 
@@ -109,6 +112,24 @@ func (db *databaseImpl) Close() error {
 func (db *databaseImpl) Exists(ctx context.Context, path string) (bool, error) {
 	_, exists, err := db.getDocumentData(ctx, path)
 	return exists, pkgerrors.Wrap(err, "db.getDocumentData")
+}
+
+// TODO - document
+func (db *databaseImpl) Ranges(ctx context.Context, path string) ([]client.Range, error) {
+	documentData, exists, err := db.getDocumentData(ctx, path)
+	if err != nil || !exists {
+		return nil, pkgerrors.Wrap(err, "db.getDocumentData")
+	}
+
+	var ranges []client.Range
+	for _, r := range documentData.Ranges {
+		ranges = append(ranges, client.Range{
+			Start: client.Position{Line: r.StartLine, Character: r.StartCharacter},
+			End:   client.Position{Line: r.EndLine, Character: r.EndCharacter},
+		})
+	}
+
+	return ranges, nil
 }
 
 // Definitions returns the set of locations defining the symbol at the given position.

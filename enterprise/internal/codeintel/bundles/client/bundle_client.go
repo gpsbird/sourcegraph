@@ -13,6 +13,9 @@ type BundleClient interface {
 	// Exists determines if the given path exists in the dump.
 	Exists(ctx context.Context, path string) (bool, error)
 
+	// TODO - document
+	Ranges(ctx context.Context, path string) ([]Range, error)
+
 	// Definitions retrieves a list of definition locations for the symbol under the given location.
 	Definitions(ctx context.Context, path string, line, character int) ([]Location, error)
 
@@ -53,6 +56,12 @@ func (c *bundleClientImpl) ID() int {
 func (c *bundleClientImpl) Exists(ctx context.Context, path string) (exists bool, err error) {
 	err = c.request(ctx, "exists", map[string]interface{}{"path": path}, &exists)
 	return exists, err
+}
+
+// TODO - document
+func (c *bundleClientImpl) Ranges(ctx context.Context, path string) (ranges []Range, err error) {
+	err = c.request(ctx, "ranges", map[string]interface{}{"path": path}, &ranges)
+	return ranges, err
 }
 
 // Definitions retrieves a list of definition locations for the symbol under the given location.
