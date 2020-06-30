@@ -22,7 +22,7 @@ type Database interface {
 	Exists(ctx context.Context, path string) (bool, error)
 
 	// TODO - document
-	Ranges(ctx context.Context, path string) ([]client.Range, error)
+	Ranges(ctx context.Context, path string) ([]client.RangeView, error)
 
 	// Definitions returns the set of locations defining the symbol at the given position.
 	Definitions(ctx context.Context, path string, line, character int) ([]client.Location, error)
@@ -115,17 +115,36 @@ func (db *databaseImpl) Exists(ctx context.Context, path string) (bool, error) {
 }
 
 // TODO - document
-func (db *databaseImpl) Ranges(ctx context.Context, path string) ([]client.Range, error) {
+func (db *databaseImpl) Ranges(ctx context.Context, path string) ([]client.RangeView, error) {
 	documentData, exists, err := db.getDocumentData(ctx, path)
 	if err != nil || !exists {
 		return nil, pkgerrors.Wrap(err, "db.getDocumentData")
 	}
 
-	var ranges []client.Range
+	// TODO
+
+	var ranges []client.RangeView
 	for _, r := range documentData.Ranges {
-		ranges = append(ranges, client.Range{
-			Start: client.Position{Line: r.StartLine, Character: r.StartCharacter},
-			End:   client.Position{Line: r.EndLine, Character: r.EndCharacter},
+		definitions, _, err := db.definitions(ctx, documentData, r)
+		if err != nil {
+			return nil, err
+		}
+
+		references, _, err := db.references(ctx, documentData, r)
+		if err != nil {
+			return nil, err
+		}
+
+		hoverText, _, err := db.hover(ctx, documentData, r)
+		if err != nil {
+			return nil, err
+		}
+
+		ranges = append(ranges, client.RangeView{
+			Range:       newRange(r.StartLine, r.StartCharacter, r.EndLine, r.EndCharacter),
+			Definitions: definitions,
+			References:  references,
+			HoverText:   hoverText,
 		})
 	}
 
@@ -134,24 +153,18 @@ func (db *databaseImpl) Ranges(ctx context.Context, path string) ([]client.Range
 
 // Definitions returns the set of locations defining the symbol at the given position.
 func (db *databaseImpl) Definitions(ctx context.Context, path string, line, character int) ([]client.Location, error) {
-	_, ranges, exists, err := db.getRangeByPosition(ctx, path, line, character)
+	documentData, ranges, exists, err := db.getRangeByPosition(ctx, path, line, character)
 	if err != nil || !exists {
 		return nil, pkgerrors.Wrap(err, "db.getRangeByPosition")
 	}
 
 	for _, r := range ranges {
-		if r.DefinitionResultID == "" {
+		locations, exists, err := db.definitions(ctx, documentData, r)
+		if err != nil {
+			return nil, err
+		}
+		if !exists {
 			continue
-		}
-
-		definitionResults, err := db.getResultByID(ctx, r.DefinitionResultID)
-		if err != nil {
-			return nil, pkgerrors.Wrap(err, "db.getResultByID")
-		}
-
-		locations, err := db.convertRangesToLocations(ctx, definitionResults)
-		if err != nil {
-			return nil, pkgerrors.Wrap(err, "db.convertRangesToLocations")
 		}
 
 		return locations, nil
@@ -162,25 +175,16 @@ func (db *databaseImpl) Definitions(ctx context.Context, path string, line, char
 
 // References returns the set of locations referencing the symbol at the given position.
 func (db *databaseImpl) References(ctx context.Context, path string, line, character int) ([]client.Location, error) {
-	_, ranges, exists, err := db.getRangeByPosition(ctx, path, line, character)
+	documentData, ranges, exists, err := db.getRangeByPosition(ctx, path, line, character)
 	if err != nil || !exists {
 		return nil, pkgerrors.Wrap(err, "db.getRangeByPosition")
 	}
 
 	var allLocations []client.Location
 	for _, r := range ranges {
-		if r.ReferenceResultID == "" {
-			continue
-		}
-
-		referenceResults, err := db.getResultByID(ctx, r.ReferenceResultID)
+		locations, _, err := db.references(ctx, documentData, r)
 		if err != nil {
-			return nil, pkgerrors.Wrap(err, "db.getResultByID")
-		}
-
-		locations, err := db.convertRangesToLocations(ctx, referenceResults)
-		if err != nil {
-			return nil, pkgerrors.Wrap(err, "db.convertRangesToLocations")
+			return nil, err
 		}
 
 		allLocations = append(allLocations, locations...)
@@ -197,18 +201,12 @@ func (db *databaseImpl) Hover(ctx context.Context, path string, line, character 
 	}
 
 	for _, r := range ranges {
-		if r.HoverResultID == "" {
-			continue
+		text, exists, err := db.hover(ctx, documentData, r)
+		if err != nil {
+			return "", client.Range{}, false, err
 		}
-
-		text, exists := documentData.HoverResults[r.HoverResultID]
 		if !exists {
-			return "", client.Range{}, false, ErrMalformedBundle{
-				Filename: db.filename,
-				Name:     "hoverResult",
-				Key:      string(r.HoverResultID),
-				// TODO(efritz) - add document context
-			}
+			continue
 		}
 
 		return text, newRange(r.StartLine, r.StartCharacter, r.EndLine, r.EndCharacter), true, nil
@@ -363,6 +361,63 @@ func (db *databaseImpl) PackageInformation(ctx context.Context, path string, pac
 	}
 
 	return client.PackageInformationData{}, false, nil
+}
+
+// definitions returns the definition locations for the given range.
+func (db *databaseImpl) definitions(ctx context.Context, documentData types.DocumentData, r types.RangeData) ([]client.Location, bool, error) {
+	if r.DefinitionResultID == "" {
+		return nil, false, nil
+	}
+
+	definitionResults, err := db.getResultByID(ctx, r.DefinitionResultID)
+	if err != nil {
+		return nil, false, pkgerrors.Wrap(err, "db.getResultByID")
+	}
+
+	locations, err := db.convertRangesToLocations(ctx, definitionResults)
+	if err != nil {
+		return nil, false, pkgerrors.Wrap(err, "db.convertRangesToLocations")
+	}
+
+	return locations, true, nil
+}
+
+// references returns the reference locations for the given range.
+func (db *databaseImpl) references(ctx context.Context, documentData types.DocumentData, r types.RangeData) ([]client.Location, bool, error) {
+	if r.ReferenceResultID == "" {
+		return nil, false, nil
+	}
+
+	referenceResults, err := db.getResultByID(ctx, r.ReferenceResultID)
+	if err != nil {
+		return nil, false, pkgerrors.Wrap(err, "db.getResultByID")
+	}
+
+	locations, err := db.convertRangesToLocations(ctx, referenceResults)
+	if err != nil {
+		return nil, false, pkgerrors.Wrap(err, "db.convertRangesToLocations")
+	}
+
+	return locations, true, nil
+}
+
+// hover returns the hover text locations for the given range.
+func (db *databaseImpl) hover(ctx context.Context, documentData types.DocumentData, r types.RangeData) (string, bool, error) {
+	if r.HoverResultID == "" {
+		return "", false, nil
+	}
+
+	text, exists := documentData.HoverResults[r.HoverResultID]
+	if !exists {
+		return "", false, ErrMalformedBundle{
+			Filename: db.filename,
+			Name:     "hoverResult",
+			Key:      string(r.HoverResultID),
+			// TODO(efritz) - add document context
+		}
+	}
+
+	return text, true, nil
 }
 
 func (db *databaseImpl) getPathsWithPrefix(ctx context.Context, prefix string) (_ []string, err error) {

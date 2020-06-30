@@ -74,7 +74,7 @@ func (api *ObservedCodeIntelAPI) FindClosestDumps(ctx context.Context, repositor
 }
 
 // Ranges calls into the inner CodeIntelAPI and registers the observed results.
-func (api *ObservedCodeIntelAPI) Ranges(ctx context.Context, file string, uploadID int) (ranges []bundles.Range, err error) {
+func (api *ObservedCodeIntelAPI) Ranges(ctx context.Context, file string, uploadID int) (ranges []ResolvedRangeView, err error) {
 	ctx, endObservation := api.rangesOperation.With(ctx, &err, observation.Args{})
 	defer func() { endObservation(float64(len(ranges)), observation.Args{}) }()
 	return api.codeIntelAPI.Ranges(ctx, file, uploadID)

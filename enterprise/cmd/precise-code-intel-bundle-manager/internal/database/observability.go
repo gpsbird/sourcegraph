@@ -109,7 +109,7 @@ func (db *ObservedDatabase) Exists(ctx context.Context, path string) (_ bool, er
 }
 
 // Ranges calls into the inner Database and registers the observed results.
-func (db *ObservedDatabase) Ranges(ctx context.Context, path string) (ranges []client.Range, err error) {
+func (db *ObservedDatabase) Ranges(ctx context.Context, path string) (ranges []client.RangeView, err error) {
 	ctx, endObservation := db.rangesOperation.With(ctx, &err, observation.Args{
 		LogFields: []log.Field{
 			log.String("filename", db.filename),

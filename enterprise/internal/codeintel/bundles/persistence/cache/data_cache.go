@@ -1,6 +1,8 @@
 package cache
 
-import "github.com/dgraph-io/ristretto"
+import (
+	"github.com/dgraph-io/ristretto"
+)
 
 // DataCache is a LRU cache that holds the results of values deserialized by a reader.
 type DataCache interface {

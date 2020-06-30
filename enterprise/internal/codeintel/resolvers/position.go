@@ -3,9 +3,11 @@ package resolvers
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io/ioutil"
 	"strings"
 
+	"github.com/dgraph-io/ristretto"
 	"github.com/sourcegraph/go-diff/diff"
 	"github.com/sourcegraph/sourcegraph/cmd/frontend/backend"
 	"github.com/sourcegraph/sourcegraph/cmd/frontend/types"
@@ -37,13 +39,22 @@ type PositionAdjuster interface {
 type positionAdjuster struct {
 	repo   *types.Repo
 	commit string
+	cache  *ristretto.Cache
 }
 
 // NewPositionAdjuster creates a new PositionAdjuster with the given repository and source commit.
 func NewPositionAdjuster(repo *types.Repo, commit string) PositionAdjuster {
+	size := 10000 // TODO
+	cache, _ := ristretto.NewCache(&ristretto.Config{
+		NumCounters: int64(size) * 10,
+		MaxCost:     int64(size),
+		BufferItems: 64,
+	})
+
 	return &positionAdjuster{
 		repo:   repo,
 		commit: commit,
+		cache:  cache,
 	}
 }
 
@@ -92,6 +103,15 @@ func (p *positionAdjuster) readHunks(ctx context.Context, repo *types.Repo, sour
 		sourceCommit, targetCommit = targetCommit, sourceCommit
 	}
 
+	key := strings.Join([]string{fmt.Sprintf("%d", repo.ID), sourceCommit, targetCommit, path}, ":")
+	if hunks, ok := p.cache.Get(key); ok {
+		if hunks == nil {
+			return nil, nil
+		}
+
+		return hunks.([]*diff.Hunk), nil
+	}
+
 	cachedRepo, err := backend.CachedGitRepo(ctx, repo)
 	if err != nil {
 		return nil, err
@@ -109,6 +129,7 @@ func (p *positionAdjuster) readHunks(ctx context.Context, repo *types.Repo, sour
 		return nil, err
 	}
 	if len(output) == 0 {
+		p.cache.Set(key, nil, 0)
 		return nil, nil
 	}
 
@@ -116,6 +137,8 @@ func (p *positionAdjuster) readHunks(ctx context.Context, repo *types.Repo, sour
 	if err != nil {
 		return nil, err
 	}
+
+	p.cache.Set(key, diff.Hunks, int64(len(diff.Hunks)))
 	return diff.Hunks, nil
 }
 

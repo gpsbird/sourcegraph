@@ -90,38 +90,29 @@ func NewQueryResolver(
 func (r *queryResolver) NavView(ctx context.Context) ([]RangeView, error) {
 	var rangeViews []RangeView
 	for i := range r.uploads {
-		adjustedPath := r.path // TODO
+		adjustedPath := r.path // TODO - adjust
 
-		// TODO - return additional context
 		ranges, err := r.codeIntelAPI.Ranges(ctx, adjustedPath, r.uploads[i].ID)
 		if err != nil {
 			return nil, err
 		}
 
 		for _, rn := range ranges {
-			definitions, err := r.codeIntelAPI.Definitions(ctx, adjustedPath, rn.Start.Line, rn.Start.Character, r.uploads[i].ID)
+			adjustedDefinitions, err := r.adjustLocations(ctx, rn.Definitions)
 			if err != nil {
 				return nil, err
 			}
 
-			// TODO - references
-
-			text, rx, _, err := r.codeIntelAPI.Hover(ctx, adjustedPath, rn.Start.Line, rn.Start.Character, r.uploads[i].ID)
-			if err != nil {
-				return nil, err
-			}
-
-			adjustedDefinitions, err := r.adjustLocations(ctx, definitions)
+			adjustedReferences, err := r.adjustLocations(ctx, rn.References)
 			if err != nil {
 				return nil, err
 			}
 
 			rangeViews = append(rangeViews, RangeView{
-				Range:       rn, // TODO - adjust
+				Range:       rn.Range, // TODO - adjust
 				Definitions: adjustedDefinitions,
-				References:  nil,
-				HoverText:   text,
-				HoverRange:  rx,
+				References:  adjustedReferences,
+				HoverText:   rn.HoverText,
 			})
 		}
 	}

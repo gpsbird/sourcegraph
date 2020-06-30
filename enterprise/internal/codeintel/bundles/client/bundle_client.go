@@ -14,7 +14,7 @@ type BundleClient interface {
 	Exists(ctx context.Context, path string) (bool, error)
 
 	// TODO - document
-	Ranges(ctx context.Context, path string) ([]Range, error)
+	Ranges(ctx context.Context, path string) ([]RangeView, error)
 
 	// Definitions retrieves a list of definition locations for the symbol under the given location.
 	Definitions(ctx context.Context, path string, line, character int) ([]Location, error)
@@ -59,7 +59,7 @@ func (c *bundleClientImpl) Exists(ctx context.Context, path string) (exists bool
 }
 
 // TODO - document
-func (c *bundleClientImpl) Ranges(ctx context.Context, path string) (ranges []Range, err error) {
+func (c *bundleClientImpl) Ranges(ctx context.Context, path string) (ranges []RangeView, err error) {
 	err = c.request(ctx, "ranges", map[string]interface{}{"path": path}, &ranges)
 	return ranges, err
 }

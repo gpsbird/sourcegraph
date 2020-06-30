@@ -10,8 +10,15 @@ import (
 	bundles "github.com/sourcegraph/sourcegraph/enterprise/internal/codeintel/bundles/client"
 )
 
+type ResolvedRangeView struct {
+	Range       bundles.Range
+	Definitions []ResolvedLocation
+	References  []ResolvedLocation
+	HoverText   string
+}
+
 // TODO - document
-func (api *codeIntelAPI) Ranges(ctx context.Context, file string, uploadID int) ([]bundles.Range, error) {
+func (api *codeIntelAPI) Ranges(ctx context.Context, file string, uploadID int) ([]ResolvedRangeView, error) {
 	dump, exists, err := api.store.GetDumpByID(ctx, uploadID)
 	if err != nil {
 		return nil, errors.Wrap(err, "store.GetDumpByID")
@@ -32,6 +39,15 @@ func (api *codeIntelAPI) Ranges(ctx context.Context, file string, uploadID int) 
 		return nil, errors.Wrap(err, "bundleClient.Ranges")
 	}
 
-	// TODO - need to attach dump?
-	return ranges, nil
+	var views []ResolvedRangeView
+	for _, r := range ranges {
+		views = append(views, ResolvedRangeView{
+			Range:       r.Range,
+			Definitions: resolveLocationsWithDump(dump, r.Definitions),
+			References:  resolveLocationsWithDump(dump, r.References),
+			HoverText:   r.HoverText,
+		})
+	}
+
+	return views, nil
 }

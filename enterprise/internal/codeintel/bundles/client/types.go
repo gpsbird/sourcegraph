@@ -47,3 +47,12 @@ type Diagnostic struct {
 	EndLine        int    `json:"endLine"`
 	EndCharacter   int    `json:"endCharacter"`
 }
+
+// TODO - document
+type RangeView struct {
+	Range       Range
+	Definitions []Location
+	References  []Location
+	HoverText   string
+	HoverRange  Range
+}

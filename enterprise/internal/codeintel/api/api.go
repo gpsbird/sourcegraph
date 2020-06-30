@@ -19,7 +19,7 @@ type CodeIntelAPI interface {
 	FindClosestDumps(ctx context.Context, repositoryID int, commit, path string, exactPath bool, indexer string) ([]store.Dump, error)
 
 	// TODO - document
-	Ranges(ctx context.Context, file string, uploadID int) ([]bundles.Range, error)
+	Ranges(ctx context.Context, file string, uploadID int) ([]ResolvedRangeView, error)
 
 	// Definitions returns the list of source locations that define the symbol at the given position.
 	// This may include remote definitions if the remote repository is also indexed.
